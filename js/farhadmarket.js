@@ -78,11 +78,11 @@ module.exports = class farhadmarket extends Exchange {
                 },
                 'private': {
                     'overview': [
-                        'overview',
+                        'balances',
                     ],
                 },
             },
-            'fees': {
+            'fees': { // TODO
                 'trading': {
                     'feeSide': 'get',
                     'tierBased': false,
@@ -213,9 +213,9 @@ module.exports = class farhadmarket extends Exchange {
         const codes = Object.keys (this.currencies);
         for (let i = 0; i < codes.length; i++) {
             const balance = response[i];
-            const symbol = this.safeCurrencyCode (this.safeString (balance, 'free'));
+            const symbol = this.safeCurrencyCode (this.safeString (balance, 'name'));
             const account = this.account ();
-            const freeze = this.safeNumber (balance, 'free');
+            const freeze = this.safeNumber (balance, 'freeze');
             const available = this.safeNumber (balance, 'available');
             account['free'] = available;
             account['total'] = available + freeze;
@@ -697,24 +697,6 @@ module.exports = class farhadmarket extends Exchange {
         //         "isWorking": true
         //     }
         //
-        // futures
-        //
-        //     {
-        //         "symbol": "BTCUSDT",
-        //         "orderId": 1,
-        //         "clientOrderId": "myOrder1",
-        //         "price": "0.1",
-        //         "origQty": "1.0",
-        //         "executedQty": "1.0",
-        //         "cumQuote": "10.0",
-        //         "status": "NEW",
-        //         "timeInForce": "GTC",
-        //         "type": "LIMIT",
-        //         "side": "BUY",
-        //         "stopPrice": "0.0",
-        //         "updateTime": 1499827319559
-        //     }
-        //
         // createOrder with { "newOrderRespType": "FULL" }
         //
         //     {
@@ -1120,34 +1102,6 @@ module.exports = class farhadmarket extends Exchange {
         const query = this.omit (params, [ 'type', 'origClientOrderId', 'clientOrderId' ]);
         const response = await this[method] (this.extend (request, query));
         return this.parseOrder (response);
-    }
-
-    async cancelAllOrders (symbol = undefined, params = {}) {
-        if (symbol === undefined) {
-            throw new ArgumentsRequired (this.id + ' cancelAllOrders() requires a symbol argument');
-        }
-        await this.loadMarkets ();
-        const market = this.market (symbol);
-        const request = {
-            'symbol': market['id'],
-        };
-        const defaultType = this.safeString2 (this.options, 'cancelAllOrders', 'defaultType', 'spot');
-        const type = this.safeString (params, 'type', defaultType);
-        const query = this.omit (params, 'type');
-        let method = 'privateDeleteOpenOrders';
-        if (type === 'margin') {
-            method = 'sapiDeleteMarginOpenOrders';
-        } else if (type === 'future') {
-            method = 'fapiPrivateDeleteAllOpenOrders';
-        } else if (type === 'delivery') {
-            method = 'dapiPrivateDeleteAllOpenOrders';
-        }
-        const response = await this[method] (this.extend (request, query));
-        if (Array.isArray (response)) {
-            return this.parseOrders (response, market);
-        } else {
-            return response;
-        }
     }
 
     async fetchPositions (symbols = undefined, params = {}) {
