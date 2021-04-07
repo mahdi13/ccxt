@@ -262,215 +262,32 @@ module.exports = class farhadmarket extends Exchange {
     }
 
     async fetchMarkets (params = {}) {
-        const defaultType = this.safeString2 (this.options, 'fetchMarkets', 'defaultType', 'spot');
-        const type = this.safeString (params, 'type', defaultType);
-        const query = this.omit (params, 'type');
-        if ((type !== 'spot') && (type !== 'future') && (type !== 'margin') && (type !== 'delivery')) {
-            throw new ExchangeError (this.id + " does not support '" + type + "' type, set exchange.options['defaultType'] to 'spot', 'margin', 'delivery' or 'future'"); // eslint-disable-line quotes
-        }
-        let method = 'publicGetExchangeInfo';
-        if (type === 'future') {
-            method = 'fapiPublicGetExchangeInfo';
-        } else if (type === 'delivery') {
-            method = 'dapiPublicGetExchangeInfo';
-        }
-        const response = await this[method] (query);
-        //
-        // spot / margin
-        //
-        //     {
-        //         "timezone":"UTC",
-        //         "serverTime":1575416692969,
-        //         "rateLimits":[
-        //             {"rateLimitType":"REQUEST_WEIGHT","interval":"MINUTE","intervalNum":1,"limit":1200},
-        //             {"rateLimitType":"ORDERS","interval":"SECOND","intervalNum":10,"limit":100},
-        //             {"rateLimitType":"ORDERS","interval":"DAY","intervalNum":1,"limit":200000}
-        //         ],
-        //         "exchangeFilters":[],
-        //         "symbols":[
-        //             {
-        //                 "symbol":"ETHBTC",
-        //                 "status":"TRADING",
-        //                 "baseAsset":"ETH",
-        //                 "baseAssetPrecision":8,
-        //                 "quoteAsset":"BTC",
-        //                 "quotePrecision":8,
-        //                 "baseCommissionPrecision":8,
-        //                 "quoteCommissionPrecision":8,
-        //                 "orderTypes":["LIMIT","LIMIT_MAKER","MARKET","STOP_LOSS_LIMIT","TAKE_PROFIT_LIMIT"],
-        //                 "icebergAllowed":true,
-        //                 "ocoAllowed":true,
-        //                 "quoteOrderQtyMarketAllowed":true,
-        //                 "isSpotTradingAllowed":true,
-        //                 "isMarginTradingAllowed":true,
-        //                 "filters":[
-        //                     {"filterType":"PRICE_FILTER","minPrice":"0.00000100","maxPrice":"100000.00000000","tickSize":"0.00000100"},
-        //                     {"filterType":"PERCENT_PRICE","multiplierUp":"5","multiplierDown":"0.2","avgPriceMins":5},
-        //                     {"filterType":"LOT_SIZE","minQty":"0.00100000","maxQty":"100000.00000000","stepSize":"0.00100000"},
-        //                     {"filterType":"MIN_NOTIONAL","minNotional":"0.00010000","applyToMarket":true,"avgPriceMins":5},
-        //                     {"filterType":"ICEBERG_PARTS","limit":10},
-        //                     {"filterType":"MARKET_LOT_SIZE","minQty":"0.00000000","maxQty":"63100.00000000","stepSize":"0.00000000"},
-        //                     {"filterType":"MAX_NUM_ALGO_ORDERS","maxNumAlgoOrders":5}
-        //                 ]
-        //             },
-        //         ],
-        //     }
-        //
-        // futures/usdt-margined (fapi)
-        //
-        //     {
-        //         "timezone":"UTC",
-        //         "serverTime":1575417244353,
-        //         "rateLimits":[
-        //             {"rateLimitType":"REQUEST_WEIGHT","interval":"MINUTE","intervalNum":1,"limit":1200},
-        //             {"rateLimitType":"ORDERS","interval":"MINUTE","intervalNum":1,"limit":1200}
-        //         ],
-        //         "exchangeFilters":[],
-        //         "symbols":[
-        //             {
-        //                 "symbol":"BTCUSDT",
-        //                 "status":"TRADING",
-        //                 "maintMarginPercent":"2.5000",
-        //                 "requiredMarginPercent":"5.0000",
-        //                 "baseAsset":"BTC",
-        //                 "quoteAsset":"USDT",
-        //                 "pricePrecision":2,
-        //                 "quantityPrecision":3,
-        //                 "baseAssetPrecision":8,
-        //                 "quotePrecision":8,
-        //                 "filters":[
-        //                     {"minPrice":"0.01","maxPrice":"100000","filterType":"PRICE_FILTER","tickSize":"0.01"},
-        //                     {"stepSize":"0.001","filterType":"LOT_SIZE","maxQty":"1000","minQty":"0.001"},
-        //                     {"stepSize":"0.001","filterType":"MARKET_LOT_SIZE","maxQty":"1000","minQty":"0.001"},
-        //                     {"limit":200,"filterType":"MAX_NUM_ORDERS"},
-        //                     {"multiplierDown":"0.8500","multiplierUp":"1.1500","multiplierDecimal":"4","filterType":"PERCENT_PRICE"}
-        //                 ],
-        //                 "orderTypes":["LIMIT","MARKET","STOP"],
-        //                 "timeInForce":["GTC","IOC","FOK","GTX"]
-        //             }
-        //         ]
-        //     }
-        //
-        // delivery/coin-margined (dapi)
-        //
-        //     {
-        //         "timezone": "UTC",
-        //         "serverTime": 1597667052958,
-        //         "rateLimits": [
-        //             {"rateLimitType":"REQUEST_WEIGHT","interval":"MINUTE","intervalNum":1,"limit":6000},
-        //             {"rateLimitType":"ORDERS","interval":"MINUTE","intervalNum":1,"limit":6000}
-        //         ],
-        //         "exchangeFilters": [],
-        //         "symbols": [
-        //             {
-        //                 "symbol": "BTCUSD_200925",
-        //                 "pair": "BTCUSD",
-        //                 "contractType": "CURRENT_QUARTER",
-        //                 "deliveryDate": 1601020800000,
-        //                 "onboardDate": 1590739200000,
-        //                 "contractStatus": "TRADING",
-        //                 "contractSize": 100,
-        //                 "marginAsset": "BTC",
-        //                 "maintMarginPercent": "2.5000",
-        //                 "requiredMarginPercent": "5.0000",
-        //                 "baseAsset": "BTC",
-        //                 "quoteAsset": "USD",
-        //                 "pricePrecision": 1,
-        //                 "quantityPrecision": 0,
-        //                 "baseAssetPrecision": 8,
-        //                 "quotePrecision": 8,
-        //                 "equalQtyPrecision": 4,
-        //                 "filters": [
-        //                     {"minPrice":"0.1","maxPrice":"100000","filterType":"PRICE_FILTER","tickSize":"0.1"},
-        //                     {"stepSize":"1","filterType":"LOT_SIZE","maxQty":"100000","minQty":"1"},
-        //                     {"stepSize":"0","filterType":"MARKET_LOT_SIZE","maxQty":"100000","minQty":"1"},
-        //                     {"limit":200,"filterType":"MAX_NUM_ORDERS"},
-        //                     {"multiplierDown":"0.9500","multiplierUp":"1.0500","multiplierDecimal":"4","filterType":"PERCENT_PRICE"}
-        //                 ],
-        //                 "orderTypes": ["LIMIT","MARKET","STOP","STOP_MARKET","TAKE_PROFIT","TAKE_PROFIT_MARKET","TRAILING_STOP_MARKET"],
-        //                 "timeInForce": ["GTC","IOC","FOK","GTX"]
-        //             },
-        //             {
-        //                 "symbol": "BTCUSD_PERP",
-        //                 "pair": "BTCUSD",
-        //                 "contractType": "PERPETUAL",
-        //                 "deliveryDate": 4133404800000,
-        //                 "onboardDate": 1596006000000,
-        //                 "contractStatus": "TRADING",
-        //                 "contractSize": 100,
-        //                 "marginAsset": "BTC",
-        //                 "maintMarginPercent": "2.5000",
-        //                 "requiredMarginPercent": "5.0000",
-        //                 "baseAsset": "BTC",
-        //                 "quoteAsset": "USD",
-        //                 "pricePrecision": 1,
-        //                 "quantityPrecision": 0,
-        //                 "baseAssetPrecision": 8,
-        //                 "quotePrecision": 8,
-        //                 "equalQtyPrecision": 4,
-        //                 "filters": [
-        //                     {"minPrice":"0.1","maxPrice":"100000","filterType":"PRICE_FILTER","tickSize":"0.1"},
-        //                     {"stepSize":"1","filterType":"LOT_SIZE","maxQty":"100000","minQty":"1"},
-        //                     {"stepSize":"1","filterType":"MARKET_LOT_SIZE","maxQty":"100000","minQty":"1"},
-        //                     {"limit":200,"filterType":"MAX_NUM_ORDERS"},
-        //                     {"multiplierDown":"0.8500","multiplierUp":"1.1500","multiplierDecimal":"4","filterType":"PERCENT_PRICE"}
-        //                 ],
-        //                 "orderTypes": ["LIMIT","MARKET","STOP","STOP_MARKET","TAKE_PROFIT","TAKE_PROFIT_MARKET","TRAILING_STOP_MARKET"],
-        //                 "timeInForce": ["GTC","IOC","FOK","GTX"]
-        //             }
-        //         ]
-        //     }
-        //
-        if (this.options['adjustForTimeDifference']) {
-            await this.loadTimeDifference ();
-        }
-        const markets = this.safeValue (response, 'symbols', []);
+        const response = await this.publicGetMarkets (params);
         const result = [];
-        for (let i = 0; i < markets.length; i++) {
-            const market = markets[i];
-            const spot = (type === 'spot');
-            const future = (type === 'future');
-            const delivery = (type === 'delivery');
-            const id = this.safeString (market, 'symbol');
-            const lowercaseId = this.safeStringLower (market, 'symbol');
-            const baseId = this.safeString (market, 'baseAsset');
-            const quoteId = this.safeString (market, 'quoteAsset');
-            const base = this.safeCurrencyCode (baseId);
-            const quote = this.safeCurrencyCode (quoteId);
-            const contractType = this.safeString (market, 'contractType');
-            const idSymbol = (future || delivery) && (contractType !== 'PERPETUAL');
-            const symbol = idSymbol ? id : (base + '/' + quote);
-            const filters = this.safeValue (market, 'filters', []);
-            const filtersByType = this.indexBy (filters, 'filterType');
-            const precision = {
-                'base': this.safeInteger (market, 'baseAssetPrecision'),
-                'quote': this.safeInteger (market, 'quotePrecision'),
-                'amount': this.safeInteger (market, 'baseAssetPrecision'),
-                'price': this.safeInteger (market, 'quotePrecision'),
-            };
-            const status = this.safeString2 (market, 'status', 'contractStatus');
-            const active = (status === 'TRADING');
-            const margin = this.safeValue (market, 'isMarginTradingAllowed', future || delivery);
-            const entry = {
+        for (let i = 0; i < response.length; i++) {
+            const market = response[i];
+            const id = this.safeString (market, 'name');
+            const baseId = this.safeString (market, 'baseCurrencySymbol');
+            const quoteId = this.safeString (market, 'quoteCurrencySymbol');
+            const base = this.safeCurrency (baseId);
+            const quote = this.safeCurrency (quoteId);
+            const symbol = baseId + '/' + quoteId;
+            const active = true;
+            const maxAmount = this.safeNumber (market, 'maxAmount');
+            const minAmount = this.safeNumber (market, 'minAmount');
+            result.push({
                 'id': id,
-                'lowercaseId': lowercaseId,
                 'symbol': symbol,
                 'base': base,
                 'quote': quote,
                 'baseId': baseId,
                 'quoteId': quoteId,
-                'info': market,
-                'type': type,
-                'spot': spot,
-                'margin': margin,
-                'future': future,
-                'delivery': delivery,
                 'active': active,
-                'precision': precision,
+                'info': market,
                 'limits': {
                     'amount': {
-                        'min': Math.pow (10, -precision['amount']),
-                        'max': undefined,
+                        'min': minAmount,
+                        'max': maxAmount,
                     },
                     'price': {
                         'min': undefined,
@@ -481,44 +298,7 @@ module.exports = class farhadmarket extends Exchange {
                         'max': undefined,
                     },
                 },
-            };
-            if ('PRICE_FILTER' in filtersByType) {
-                const filter = this.safeValue (filtersByType, 'PRICE_FILTER', {});
-                // PRICE_FILTER reports zero values for maxPrice
-                // since they updated filter types in November 2018
-                // https://github.com/ccxt/ccxt/issues/4286
-                // therefore limits['price']['max'] doesn't have any meaningful value except undefined
-                entry['limits']['price'] = {
-                    'min': this.safeNumber (filter, 'minPrice'),
-                    'max': undefined,
-                };
-                const maxPrice = this.safeNumber (filter, 'maxPrice');
-                if ((maxPrice !== undefined) && (maxPrice > 0)) {
-                    entry['limits']['price']['max'] = maxPrice;
-                }
-                entry['precision']['price'] = this.precisionFromString (filter['tickSize']);
-            }
-            if ('LOT_SIZE' in filtersByType) {
-                const filter = this.safeValue (filtersByType, 'LOT_SIZE', {});
-                const stepSize = this.safeString (filter, 'stepSize');
-                entry['precision']['amount'] = this.precisionFromString (stepSize);
-                entry['limits']['amount'] = {
-                    'min': this.safeNumber (filter, 'minQty'),
-                    'max': this.safeNumber (filter, 'maxQty'),
-                };
-            }
-            if ('MARKET_LOT_SIZE' in filtersByType) {
-                const filter = this.safeValue (filtersByType, 'MARKET_LOT_SIZE', {});
-                entry['limits']['market'] = {
-                    'min': this.safeNumber (filter, 'minQty'),
-                    'max': this.safeNumber (filter, 'maxQty'),
-                };
-            }
-            if ('MIN_NOTIONAL' in filtersByType) {
-                const filter = this.safeValue (filtersByType, 'MIN_NOTIONAL', {});
-                entry['limits']['cost']['min'] = this.safeNumber2 (filter, 'minNotional', 'notional');
-            }
-            result.push (entry);
+            });
         }
         return result;
     }
