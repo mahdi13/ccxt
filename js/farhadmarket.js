@@ -8,20 +8,16 @@ const { TRUNCATE } = require ('./base/functions/number');
 
 //  ---------------------------------------------------------------------------
 
-module.exports = class binance extends Exchange {
+module.exports = class farhadmarket extends Exchange {
     describe () {
         return this.deepExtend (super.describe (), {
-            'id': 'binance',
-            'name': 'Binance',
-            'countries': [ 'JP', 'MT' ], // Japan, Malta
+            'id': 'farhadmarket',
+            'name': 'FarhadMarket',
+            'countries': [ 'IR' ],
             'rateLimit': 500,
-            'certified': true,
-            'pro': true,
-            // new metainfo interface
             'has': {
-                'cancelAllOrders': true,
                 'cancelOrder': true,
-                'CORS': false,
+                'CORS': true,
                 'createOrder': true,
                 'fetchCurrencies': true,
                 'fetchBalance': true,
@@ -46,13 +42,9 @@ module.exports = class binance extends Exchange {
                 'fetchTradingFees': true,
                 'fetchTransactions': false,
                 'fetchWithdrawals': true,
-                'withdraw': true,
-                'transfer': true,
-                'fetchTransfers': true,
             },
             'timeframes': {
                 '1m': '1m',
-                '3m': '3m',
                 '5m': '5m',
                 '15m': '15m',
                 '30m': '30m',
@@ -60,7 +52,6 @@ module.exports = class binance extends Exchange {
                 '2h': '2h',
                 '4h': '4h',
                 '6h': '6h',
-                '8h': '8h',
                 '12h': '12h',
                 '1d': '1d',
                 '3d': '3d',
@@ -68,40 +59,13 @@ module.exports = class binance extends Exchange {
                 '1M': '1M',
             },
             'urls': {
-                'logo': 'https://user-images.githubusercontent.com/1294454/29604020-d5483cdc-87ee-11e7-94c7-d1a8d9169293.jpg',
-                'test': {
-                    'dapiPublic': 'https://testnet.binancefuture.com/dapi/v1',
-                    'dapiPrivate': 'https://testnet.binancefuture.com/dapi/v1',
-                    'fapiPublic': 'https://testnet.binancefuture.com/fapi/v1',
-                    'fapiPrivate': 'https://testnet.binancefuture.com/fapi/v1',
-                    'fapiPrivateV2': 'https://testnet.binancefuture.com/fapi/v2',
-                    'public': 'https://testnet.binance.vision/api/v3',
-                    'private': 'https://testnet.binance.vision/api/v3',
-                    'v3': 'https://testnet.binance.vision/api/v3',
-                    'v1': 'https://testnet.binance.vision/api/v1',
-                },
-                'api': {
-                    'wapi': 'https://api.binance.com/wapi/v3',
-                    'sapi': 'https://api.binance.com/sapi/v1',
-                    'dapiPublic': 'https://dapi.binance.com/dapi/v1',
-                    'dapiPrivate': 'https://dapi.binance.com/dapi/v1',
-                    'dapiData': 'https://dapi.binance.com/futures/data',
-                    'fapiPublic': 'https://fapi.binance.com/fapi/v1',
-                    'fapiPrivate': 'https://fapi.binance.com/fapi/v1',
-                    'fapiData': 'https://fapi.binance.com/futures/data',
-                    'fapiPrivateV2': 'https://fapi.binance.com/fapi/v2',
-                    'public': 'https://api.binance.com/api/v3',
-                    'private': 'https://api.binance.com/api/v3',
-                    'v3': 'https://api.binance.com/api/v3',
-                    'v1': 'https://api.binance.com/api/v1',
-                },
-                'www': 'https://www.binance.com',
-                'referral': 'https://www.binance.com/?ref=10205187',
-                'doc': [
-                    'https://binance-docs.github.io/apidocs/spot/en',
-                ],
-                'api_management': 'https://www.binance.com/en/usercenter/settings/api-management',
-                'fees': 'https://www.binance.com/en/fee/schedule',
+                'test': 'https://testnet.farhadmarket.com',
+                'logo': 'https://app.farhadmarket.com/static/media/logo4-white-cropped.b484afd7.png',
+                'api': 'https://api.farhadmarket.com/apiv2',
+                'www': 'https://app.farhadmarket.com',
+                'doc': 'https://apidocs.farhadmarket.com/',
+                'api_management': 'https://app.farhadmarket.com/api',
+                'fees': 'https://farhadmarket.com/fees',
             },
             'api': {
                 // the API structure below will need 3-layer apidefs
