@@ -21,7 +21,6 @@ module.exports = class farhadmarket extends Exchange {
                 'createOrder': true,
                 'fetchCurrencies': true,
                 'fetchBalance': true,
-                'fetchBidsAsks': true,
                 'fetchClosedOrders': 'emulated',
                 'fetchDepositAddress': false, // TODO
                 'fetchDeposits': false, // TODO
@@ -33,7 +32,6 @@ module.exports = class farhadmarket extends Exchange {
                 'fetchOrder': true,
                 'fetchOrders': true,
                 'fetchOrderBook': true,
-                'fetchStatus': true,
                 'fetchTicker': true,
                 'fetchTickers': true,
                 'fetchTime': false, // TODO
@@ -44,19 +42,20 @@ module.exports = class farhadmarket extends Exchange {
                 'fetchWithdrawals': false, // TODO
             },
             'timeframes': {
-                '1m': '1m',
-                '5m': '5m',
-                '15m': '15m',
-                '30m': '30m',
-                '1h': '1h',
-                '2h': '2h',
-                '4h': '4h',
-                '6h': '6h',
-                '12h': '12h',
-                '1d': '1d',
-                '3d': '3d',
-                '1w': '1w',
-                '1M': '1M',
+                '1m': '60',
+                '3m': '180',
+                '5m': '300',
+                '15m': '900',
+                '30m': '1800',
+                '1h': '3600',
+                '2h': '7200',
+                '4h': '14400',
+                '6h': '21600',
+                '12h': '43200',
+                '1d': '86400',
+                '3d': '259200',
+                '1w': '604800',
+                '1M': '2592000',
             },
             'urls': {
                 'test': 'https://testnet.farhadmarket.com',
@@ -74,6 +73,7 @@ module.exports = class farhadmarket extends Exchange {
                         'markets',
                     ],
                     'depth': [ 'markets/{symbol}' ],
+                    'kline': [ 'markets/{symbol}' ],
                     'cancel': [ 'orders' ],
                     'create': [ 'orders' ],
                 },
@@ -291,19 +291,6 @@ module.exports = class farhadmarket extends Exchange {
         };
     }
 
-    async fetchStatus (params = {}) {
-        const response = await this.wapiGetSystemStatus (params);
-        let status = this.safeString (response, 'status');
-        if (status !== undefined) {
-            status = (status === '0') ? 'ok' : 'maintenance';
-            this.status = this.extend (this.status, {
-                'status': status,
-                'updated': this.milliseconds (),
-            });
-        }
-        return this.status;
-    }
-
     async fetchTicker (symbol, params = {}) {
         await this.loadMarkets ();
         const market = this.market (symbol);
@@ -322,23 +309,6 @@ module.exports = class farhadmarket extends Exchange {
             return this.parseTicker (firstTicker, market);
         }
         return this.parseTicker (response, market);
-    }
-
-    async fetchBidsAsks (symbols = undefined, params = {}) {
-        await this.loadMarkets ();
-        const defaultType = this.safeString2 (this.options, 'fetchBidsAsks', 'defaultType', 'spot');
-        const type = this.safeString (params, 'type', defaultType);
-        const query = this.omit (params, 'type');
-        let method = undefined;
-        if (type === 'future') {
-            method = 'fapiPublicGetTickerBookTicker';
-        } else if (type === 'delivery') {
-            method = 'dapiPublicGetTickerBookTicker';
-        } else {
-            method = 'publicGetTickerBookTicker';
-        }
-        const response = await this[method] (query);
-        return this.parseTickers (response, symbols);
     }
 
     async fetchTickers (symbols = undefined, params = {}) {
@@ -360,68 +330,34 @@ module.exports = class farhadmarket extends Exchange {
     }
 
     parseOHLCV (ohlcv, market = undefined) {
-        //
-        //     [
-        //         1591478520000,
-        //         "0.02501300",
-        //         "0.02501800",
-        //         "0.02500000",
-        //         "0.02500000",
-        //         "22.19000000",
-        //         1591478579999,
-        //         "0.55490906",
-        //         40,
-        //         "10.92900000",
-        //         "0.27336462",
-        //         "0"
-        //     ]
-        //
         return [
-            this.safeInteger (ohlcv, 0),
-            this.safeNumber (ohlcv, 1),
-            this.safeNumber (ohlcv, 2),
-            this.safeNumber (ohlcv, 3),
-            this.safeNumber (ohlcv, 4),
-            this.safeNumber (ohlcv, 5),
+            this.safeInteger (ohlcv, 'time') * 1000,
+            this.safeNumber (ohlcv, 'o'),
+            this.safeNumber (ohlcv, 'h'),
+            this.safeNumber (ohlcv, 'l'),
+            this.safeNumber (ohlcv, 'c'),
+            this.safeNumber (ohlcv, 'volume'),
         ];
     }
 
     async fetchOHLCV (symbol, timeframe = '1m', since = undefined, limit = undefined, params = {}) {
         await this.loadMarkets ();
         const market = this.market (symbol);
-        // binance docs say that the default limit 500, max 1500 for futures, max 1000 for spot markets
-        // the reality is that the time range wider than 500 candles won't work right
-        const defaultLimit = 500;
-        const maxLimit = 1500;
-        limit = (limit === undefined) ? defaultLimit : Math.min (limit, maxLimit);
+        const duration = this.parseTimeframe (timeframe)
         const request = {
             'symbol': market['id'],
-            'interval': this.timeframes[timeframe],
-            'limit': limit,
+            'interval': duration,
         };
-        const duration = this.parseTimeframe (timeframe);
-        if (since !== undefined) {
-            request['startTime'] = since;
-            if (since > 0) {
-                const endTime = this.sum (since, limit * duration * 1000 - 1);
-                const now = this.milliseconds ();
-                request['endTime'] = Math.min (now, endTime);
-            }
+        if (limit === undefined) {
+            limit = 100;
         }
-        let method = 'publicGetKlines';
-        if (market['future']) {
-            method = 'fapiPublicGetKlines';
-        } else if (market['delivery']) {
-            method = 'dapiPublicGetKlines';
+        if (since === undefined) {
+            since = this.milliseconds () - duration * limit * 1000;
         }
-        const response = await this[method] (this.extend (request, params));
-        //
-        //     [
-        //         [1591478520000,"0.02501300","0.02501800","0.02500000","0.02500000","22.19000000",1591478579999,"0.55490906",40,"10.92900000","0.27336462","0"],
-        //         [1591478580000,"0.02499600","0.02500900","0.02499400","0.02500300","21.34700000",1591478639999,"0.53370468",24,"7.53800000","0.18850725","0"],
-        //         [1591478640000,"0.02500800","0.02501100","0.02500300","0.02500800","154.14200000",1591478699999,"3.85405839",97,"5.32300000","0.13312641","0"],
-        //     ]
-        //
+        const start = parseInt (since / 1000);
+        request['start'] = start;
+        request['end'] = this.sum (start, limit * duration);
+        const response = await this.publicKlineMarketsSymbol (this.extend (request, params));
         return this.parseOHLCVs (response, market, timeframe, since, limit);
     }
 
@@ -1818,7 +1754,6 @@ module.exports = class farhadmarket extends Exchange {
             if (Object.keys (query).length) {
                 url += '?' + this.urlencode (query);
             }
-            console.log(url)
         } else {
             this.checkRequiredCredentials ();
             body = this.urlencode (params);
