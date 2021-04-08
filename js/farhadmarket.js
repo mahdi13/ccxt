@@ -73,6 +73,7 @@ module.exports = class farhadmarket extends Exchange {
                         'currencies',
                         'markets',
                     ],
+                    'depth': [ 'markets/{symbol}' ],
                     'cancel': [ 'orders' ],
                     'create': [ 'orders' ],
                 },
@@ -96,10 +97,6 @@ module.exports = class farhadmarket extends Exchange {
 
     currencyToPrecision (currency, fee) {
         return this.numberToString (fee);
-    }
-
-    nonce () {
-        return this.milliseconds () - this.options['timeDifference'];
     }
 
     async fetchTime (params = {}) {
@@ -230,20 +227,14 @@ module.exports = class farhadmarket extends Exchange {
         const market = this.market (symbol);
         const request = {
             'symbol': market['id'],
+            'interval': '0',
         };
         if (limit !== undefined) {
-            request['limit'] = limit; // default 100, max 5000, see https://github.com/binance-exchange/binance-official-api-docs/blob/master/rest-api.md#order-book
+            request['limit'] = limit; // max 100
         }
-        let method = 'publicGetDepth';
-        if (market['future']) {
-            method = 'fapiPublicGetDepth';
-        } else if (market['delivery']) {
-            method = 'dapiPublicGetDepth';
-        }
-        const response = await this[method] (this.extend (request, params));
-        const orderbook = this.parseOrderBook (response);
-        orderbook['nonce'] = this.safeInteger (response, 'lastUpdateId');
-        return orderbook;
+        const response = await this.publicDepthMarketsSymbol (this.extend (request, params));
+        const timestamp = this.seconds ();
+        return this.parseOrderBook (response, timestamp, 'bids', 'asks', 'price', 'amount');
     }
 
     parseTicker (ticker, market = undefined) {
@@ -1821,8 +1812,14 @@ module.exports = class farhadmarket extends Exchange {
     }
 
     sign (path, api = 'public', method = 'GET', params = {}, headers = undefined, body = undefined) {
-        let url = this.urls['api'] + '/' + path;
-        if (api !== 'public') {
+        let url = this.urls['api'] + '/' + this.implodeParams (path, params);
+        const query = this.omit (params, this.extractParams (path));
+        if (api === 'public') {
+            if (Object.keys (query).length) {
+                url += '?' + this.urlencode (query);
+            }
+            console.log(url)
+        } else {
             this.checkRequiredCredentials ();
             body = this.urlencode (params);
             headers = {
@@ -1898,14 +1895,5 @@ module.exports = class farhadmarket extends Exchange {
         if (!success) {
             throw new ExchangeError (this.id + ' ' + body);
         }
-    }
-
-    async request (path, api = 'public', method = 'GET', params = {}, headers = undefined, body = undefined) {
-        const response = await this.fetch2 (path, api, method, params, headers, body);
-        // a workaround for {"code":-2015,"msg":"Invalid API-key, IP, or permissions for action."}
-        if ((api === 'private') || (api === 'wapi')) {
-            this.options['hasAlreadyAuthenticatedSuccessfully'] = true;
-        }
-        return response;
     }
 };
