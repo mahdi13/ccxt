@@ -78,9 +78,8 @@ module.exports = class farhadmarket extends Exchange {
                     'create': [ 'orders' ],
                 },
                 'private': {
-                    'overview': [
-                        'balances',
-                    ],
+                    'overview': [ 'balances' ],
+                    'cancel': [ 'orders/{id}' ],
                 },
             },
             'fees': { // TODO
@@ -1004,30 +1003,11 @@ module.exports = class farhadmarket extends Exchange {
         }
         await this.loadMarkets ();
         const market = this.market (symbol);
-        const defaultType = this.safeString2 (this.options, 'fetchOpenOrders', 'defaultType', market['type']);
-        const type = this.safeString (params, 'type', defaultType);
-        // https://github.com/ccxt/ccxt/issues/6507
-        const origClientOrderId = this.safeValue2 (params, 'origClientOrderId', 'clientOrderId');
         const request = {
-            'symbol': market['id'],
-            // 'orderId': id,
-            // 'origClientOrderId': id,
+            'id': id,
+            'marketName': market['id'],
         };
-        if (origClientOrderId === undefined) {
-            request['orderId'] = id;
-        } else {
-            request['origClientOrderId'] = origClientOrderId;
-        }
-        let method = 'privateDeleteOrder';
-        if (type === 'future') {
-            method = 'fapiPrivateDeleteOrder';
-        } else if (type === 'delivery') {
-            method = 'dapiPrivateDeleteOrder';
-        } else if (type === 'margin') {
-            method = 'sapiDeleteMarginOrder';
-        }
-        const query = this.omit (params, [ 'type', 'origClientOrderId', 'clientOrderId' ]);
-        const response = await this[method] (this.extend (request, query));
+        const response = await this.privateCancelOrdersId (this.extend (request, params));
         return this.parseOrder (response);
     }
 
@@ -1750,18 +1730,20 @@ module.exports = class farhadmarket extends Exchange {
     sign (path, api = 'public', method = 'GET', params = {}, headers = undefined, body = undefined) {
         let url = this.urls['api'] + '/' + this.implodeParams (path, params);
         const query = this.omit (params, this.extractParams (path));
-        if (api === 'public') {
-            if (Object.keys (query).length) {
-                url += '?' + this.urlencode (query);
-            }
-        } else {
+        if (api === 'private') {
             this.checkRequiredCredentials ();
-            body = this.urlencode (params);
             headers = {
                 'X-API-KEY': this.apiKey,
                 'X-API-SECRET': this.secret,
                 'Content-Type': 'application/x-www-form-urlencoded',
             };
+        }
+        if (method === 'CREATE') {
+            body = this.urlencode (query);
+        } else {
+            if (Object.keys (query).length) {
+                url += '?' + this.urlencode (query);
+            }
         }
         return { 'url': url, 'method': method, 'body': body, 'headers': headers };
     }
