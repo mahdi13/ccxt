@@ -74,11 +74,13 @@ module.exports = class farhadmarket extends Exchange {
                     ],
                     'depth': [ 'markets/{symbol}' ],
                     'kline': [ 'markets/{symbol}' ],
+                    'peek': [ 'markets/{symbol}/marketdeals' ],
                 },
                 'private': {
                     'overview': [ 'balances' ],
                     'cancel': [ 'orders/{id}' ],
                     'create': [ 'orders' ],
+                    'peek': [ 'markets/{symbol}/mydeals' ],
                 },
             },
             'fees': { // TODO
@@ -371,139 +373,26 @@ module.exports = class farhadmarket extends Exchange {
     }
 
     parseTrade (trade, market = undefined) {
-        if ('isDustTrade' in trade) {
-            return this.parseDustTrade (trade, market);
-        }
-        //
-        // aggregate trades
-        // https://github.com/binance-exchange/binance-official-api-docs/blob/master/rest-api.md#compressedaggregate-trades-list
-        //
-        //     {
-        //         "a": 26129,         // Aggregate tradeId
-        //         "p": "0.01633102",  // Price
-        //         "q": "4.70443515",  // Quantity
-        //         "f": 27781,         // First tradeId
-        //         "l": 27781,         // Last tradeId
-        //         "T": 1498793709153, // Timestamp
-        //         "m": true,          // Was the buyer the maker?
-        //         "M": true           // Was the trade the best price match?
-        //     }
-        //
-        // recent public trades and old public trades
-        // https://github.com/binance-exchange/binance-official-api-docs/blob/master/rest-api.md#recent-trades-list
-        // https://github.com/binance-exchange/binance-official-api-docs/blob/master/rest-api.md#old-trade-lookup-market_data
-        //
-        //     {
-        //         "id": 28457,
-        //         "price": "4.00000100",
-        //         "qty": "12.00000000",
-        //         "time": 1499865549590,
-        //         "isBuyerMaker": true,
-        //         "isBestMatch": true
-        //     }
-        //
-        // private trades
-        // https://github.com/binance-exchange/binance-official-api-docs/blob/master/rest-api.md#account-trade-list-user_data
-        //
-        //     {
-        //         "symbol": "BNBBTC",
-        //         "id": 28457,
-        //         "orderId": 100234,
-        //         "price": "4.00000100",
-        //         "qty": "12.00000000",
-        //         "commission": "10.10000000",
-        //         "commissionAsset": "BNB",
-        //         "time": 1499865549590,
-        //         "isBuyer": true,
-        //         "isMaker": false,
-        //         "isBestMatch": true
-        //     }
-        //
-        // futures trades
-        // https://binance-docs.github.io/apidocs/futures/en/#account-trade-list-user_data
-        //
-        //     {
-        //       "accountId": 20,
-        //       "buyer": False,
-        //       "commission": "-0.07819010",
-        //       "commissionAsset": "USDT",
-        //       "counterPartyId": 653,
-        //       "id": 698759,
-        //       "maker": False,
-        //       "orderId": 25851813,
-        //       "price": "7819.01",
-        //       "qty": "0.002",
-        //       "quoteQty": "0.01563",
-        //       "realizedPnl": "-0.91539999",
-        //       "side": "SELL",
-        //       "symbol": "BTCUSDT",
-        //       "time": 1569514978020
-        //     }
-        //     {
-        //       "symbol": "BTCUSDT",
-        //       "id": 477128891,
-        //       "orderId": 13809777875,
-        //       "side": "SELL",
-        //       "price": "38479.55",
-        //       "qty": "0.001",
-        //       "realizedPnl": "-0.00009534",
-        //       "marginAsset": "USDT",
-        //       "quoteQty": "38.47955",
-        //       "commission": "-0.00076959",
-        //       "commissionAsset": "USDT",
-        //       "time": 1612733566708,
-        //       "positionSide": "BOTH",
-        //       "maker": true,
-        //       "buyer": false
-        //     }
-        //
-        const timestamp = this.safeInteger2 (trade, 'T', 'time');
-        const price = this.safeNumber2 (trade, 'p', 'price');
-        const amount = this.safeNumber2 (trade, 'q', 'qty');
-        const id = this.safeString2 (trade, 'a', 'id');
-        let side = undefined;
-        const orderId = this.safeString (trade, 'orderId');
-        if ('m' in trade) {
-            side = trade['m'] ? 'sell' : 'buy'; // this is reversed intentionally
-        } else if ('isBuyerMaker' in trade) {
-            side = trade['isBuyerMaker'] ? 'sell' : 'buy';
-        } else if ('side' in trade) {
-            side = this.safeStringLower (trade, 'side');
-        } else {
-            if ('isBuyer' in trade) {
-                side = trade['isBuyer'] ? 'buy' : 'sell'; // this is a true side
-            }
-        }
-        let fee = undefined;
-        if ('commission' in trade) {
-            fee = {
-                'cost': this.safeNumber (trade, 'commission'),
-                'currency': this.safeCurrencyCode (this.safeString (trade, 'commissionAsset')),
-            };
-        }
-        let takerOrMaker = undefined;
-        if ('isMaker' in trade) {
-            takerOrMaker = trade['isMaker'] ? 'maker' : 'taker';
-        }
-        if ('maker' in trade) {
-            takerOrMaker = trade['maker'] ? 'maker' : 'taker';
-        }
-        const marketId = this.safeString (trade, 'symbol');
-        const symbol = this.safeSymbol (marketId, market);
-        let cost = undefined;
-        if ((price !== undefined) && (amount !== undefined)) {
-            cost = price * amount;
-        }
+        const timestamp = this.parse8601 (this.safeString (trade, 'time'));
+        const id = this.safeInteger (trade, 'id');
+        const price = this.safeNumber (trade, 'price');
+        const amount = this.safeNumber (trade, 'amount');
+        const role = this.safeString (trade, 'role');
+        const side = this.safeString (trade, 'side');
+        const cost = this.safeNumber (trade, 'deal');
+        const fee = this.safeNumber (trade, 'fee');
+        const orderId = this.safeInteger (trade, 'orderId');
+        const symbol = market['symbol'];
         return {
+            'id': id,
             'info': trade,
             'timestamp': timestamp,
             'datetime': this.iso8601 (timestamp),
             'symbol': symbol,
-            'id': id,
-            'order': orderId,
             'type': undefined,
             'side': side,
-            'takerOrMaker': takerOrMaker,
+            'order': orderId,
+            'takerOrMaker': role,
             'price': price,
             'amount': amount,
             'cost': cost,
@@ -516,84 +405,11 @@ module.exports = class farhadmarket extends Exchange {
         const market = this.market (symbol);
         const request = {
             'symbol': market['id'],
-            // 'fromId': 123,    // ID to get aggregate trades from INCLUSIVE.
-            // 'startTime': 456, // Timestamp in ms to get aggregate trades from INCLUSIVE.
-            // 'endTime': 789,   // Timestamp in ms to get aggregate trades until INCLUSIVE.
-            // 'limit': 500,     // default = 500, maximum = 1000
+            'limit': 20,
+            'lastId': 0,
         };
-        const defaultType = this.safeString2 (this.options, 'fetchTrades', 'defaultType', 'spot');
-        const type = this.safeString (params, 'type', defaultType);
-        const query = this.omit (params, 'type');
-        let defaultMethod = undefined;
-        if (type === 'future') {
-            defaultMethod = 'fapiPublicGetAggTrades';
-        } else if (type === 'delivery') {
-            defaultMethod = 'dapiPublicGetAggTrades';
-        } else {
-            defaultMethod = 'publicGetAggTrades';
-        }
-        let method = this.safeString (this.options, 'fetchTradesMethod', defaultMethod);
-        if (method === 'publicGetAggTrades') {
-            if (since !== undefined) {
-                request['startTime'] = since;
-                // https://github.com/ccxt/ccxt/issues/6400
-                // https://github.com/binance-exchange/binance-official-api-docs/blob/master/rest-api.md#compressedaggregate-trades-list
-                request['endTime'] = this.sum (since, 3600000);
-            }
-            if (type === 'future') {
-                method = 'fapiPublicGetAggTrades';
-            } else if (type === 'delivery') {
-                method = 'dapiPublicGetAggTrades';
-            }
-        } else if (method === 'publicGetHistoricalTrades') {
-            if (type === 'future') {
-                method = 'fapiPublicGetHistoricalTrades';
-            } else if (type === 'delivery') {
-                method = 'dapiPublicGetHistoricalTrades';
-            }
-        }
-        if (limit !== undefined) {
-            request['limit'] = limit; // default = 500, maximum = 1000
-        }
-        //
-        // Caveats:
-        // - default limit (500) applies only if no other parameters set, trades up
-        //   to the maximum limit may be returned to satisfy other parameters
-        // - if both limit and time window is set and time window contains more
-        //   trades than the limit then the last trades from the window are returned
-        // - 'tradeId' accepted and returned by this method is "aggregate" trade id
-        //   which is different from actual trade id
-        // - setting both fromId and time window results in error
-        const response = await this[method] (this.extend (request, query));
-        //
-        // aggregate trades
-        //
-        //     [
-        //         {
-        //             "a": 26129,         // Aggregate tradeId
-        //             "p": "0.01633102",  // Price
-        //             "q": "4.70443515",  // Quantity
-        //             "f": 27781,         // First tradeId
-        //             "l": 27781,         // Last tradeId
-        //             "T": 1498793709153, // Timestamp
-        //             "m": true,          // Was the buyer the maker?
-        //             "M": true           // Was the trade the best price match?
-        //         }
-        //     ]
-        //
-        // recent public trades and historical public trades
-        //
-        //     [
-        //         {
-        //             "id": 28457,
-        //             "price": "4.00000100",
-        //             "qty": "12.00000000",
-        //             "time": 1499865549590,
-        //             "isBuyerMaker": true,
-        //             "isBestMatch": true
-        //         }
-        //     ]
-        //
+        // TODO: Use `since` parameter
+        const response = await this.publicPeekMarketsSymbolMarketdeals (this.extend (request, params));
         return this.parseTrades (response, market, since, limit);
     }
 
@@ -814,167 +630,24 @@ module.exports = class farhadmarket extends Exchange {
         return this.parseOrder (response);
     }
 
-    async fetchPositions (symbols = undefined, params = {}) {
-        await this.loadMarkets ();
-        const defaultType = this.safeString (this.options, 'defaultType', 'future');
-        const type = this.safeString (params, 'type', defaultType);
-        params = this.omit (params, 'type');
-        const options = this.safeValue (this.options, 'fetchPositions', {});
-        const defaultMethod = (type === 'delivery') ? 'dapiPrivateGetAccount' : 'fapiPrivateV2GetAccount';
-        const method = this.safeString (options, type, defaultMethod);
-        const response = await this[method] (params);
-        //
-        // futures, delivery
-        //
-        //     {
-        //         "feeTier":0,
-        //         "canTrade":true,
-        //         "canDeposit":true,
-        //         "canWithdraw":true,
-        //         "updateTime":0,
-        //         "assets":[
-        //             {
-        //                 "asset":"ETH",
-        //                 "walletBalance":"0.09886711",
-        //                 "unrealizedProfit":"0.00000000",
-        //                 "marginBalance":"0.09886711",
-        //                 "maintMargin":"0.00000000",
-        //                 "initialMargin":"0.00000000",
-        //                 "positionInitialMargin":"0.00000000",
-        //                 "openOrderInitialMargin":"0.00000000",
-        //                 "maxWithdrawAmount":"0.09886711",
-        //                 "crossWalletBalance":"0.09886711",
-        //                 "crossUnPnl":"0.00000000",
-        //                 "availableBalance":"0.09886711"
-        //             }
-        //         ],
-        //         "positions":[
-        //             {
-        //                 "symbol":"BTCUSD_201225",
-        //                 "initialMargin":"0",
-        //                 "maintMargin":"0",
-        //                 "unrealizedProfit":"0.00000000",
-        //                 "positionInitialMargin":"0",
-        //                 "openOrderInitialMargin":"0",
-        //                 "leverage":"20",
-        //                 "isolated":false,
-        //                 "positionSide":"BOTH",
-        //                 "entryPrice":"0.00000000",
-        //                 "maxQty":"250", // "maxNotional" on futures
-        //             },
-        //         ]
-        //     }
-        //
-        // fapiPrivateGetPositionRisk, dapiPrivateGetPositionRisk
-        //
-        // [
-        //   {
-        //     symbol: 'XRPUSD_210625',
-        //     positionAmt: '0',
-        //     entryPrice: '0.00000000',
-        //     markPrice: '0.00000000',
-        //     unRealizedProfit: '0.00000000',
-        //     liquidationPrice: '0',
-        //     leverage: '20',
-        //     maxQty: '500000',
-        //     marginType: 'cross',
-        //     isolatedMargin: '0.00000000',
-        //     isAutoAddMargin: 'false',
-        //     positionSide: 'BOTH',
-        //     notionalValue: '0',
-        //     isolatedWallet: '0'
-        //   },
-        //   {
-        //     symbol: 'BTCUSD_210326',
-        //     positionAmt: '1',
-        //     entryPrice: '60665.79999885',
-        //     markPrice: '60696.76856843',
-        //     unRealizedProfit: '0.00000084',
-        //     liquidationPrice: '58034.68208092',
-        //     leverage: '20',
-        //     maxQty: '50',
-        //     marginType: 'isolated',
-        //     isolatedMargin: '0.00008345',
-        //     isAutoAddMargin: 'false',
-        //     positionSide: 'BOTH',
-        //     notionalValue: '0.00164753',
-        //     isolatedWallet: '0.00008261'
-        //   },
-        // ]
-        //
-        return this.safeValue (response, 'positions', response);
-    }
-
     async fetchMyTrades (symbol = undefined, since = undefined, limit = undefined, params = {}) {
         if (symbol === undefined) {
             throw new ArgumentsRequired (this.id + ' fetchMyTrades() requires a symbol argument');
         }
+        this.checkRequiredCredentials ();
         await this.loadMarkets ();
         const market = this.market (symbol);
-        const defaultType = this.safeString2 (this.options, 'fetchMyTrades', 'defaultType', market['type']);
-        const type = this.safeString (params, 'type', defaultType);
         params = this.omit (params, 'type');
-        let method = undefined;
-        if (type === 'spot') {
-            method = 'privateGetMyTrades';
-        } else if (type === 'margin') {
-            method = 'sapiGetMarginMyTrades';
-        } else if (type === 'future') {
-            method = 'fapiPrivateGetUserTrades';
-        } else if (type === 'delivery') {
-            method = 'dapiPrivateGetUserTrades';
-        }
         const request = {
             'symbol': market['id'],
+            'offset': 0,
+            'limit': 20,
         };
-        if (since !== undefined) {
-            request['startTime'] = since;
-        }
+        // TODO: Use `since` parameter
         if (limit !== undefined) {
             request['limit'] = limit;
         }
-        const response = await this[method] (this.extend (request, params));
-        //
-        // spot trade
-        //
-        //     [
-        //         {
-        //             "symbol": "BNBBTC",
-        //             "id": 28457,
-        //             "orderId": 100234,
-        //             "price": "4.00000100",
-        //             "qty": "12.00000000",
-        //             "commission": "10.10000000",
-        //             "commissionAsset": "BNB",
-        //             "time": 1499865549590,
-        //             "isBuyer": true,
-        //             "isMaker": false,
-        //             "isBestMatch": true,
-        //         }
-        //     ]
-        //
-        // futures trade
-        //
-        //     [
-        //         {
-        //             "accountId": 20,
-        //             "buyer": False,
-        //             "commission": "-0.07819010",
-        //             "commissionAsset": "USDT",
-        //             "counterPartyId": 653,
-        //             "id": 698759,
-        //             "maker": False,
-        //             "orderId": 25851813,
-        //             "price": "7819.01",
-        //             "qty": "0.002",
-        //             "quoteQty": "0.01563",
-        //             "realizedPnl": "-0.91539999",
-        //             "side": "SELL",
-        //             "symbol": "BTCUSDT",
-        //             "time": 1569514978020
-        //         }
-        //     ]
-        //
+        const response = await this.privatePeekMarketsSymbolMydeals (this.extend (request, params));
         return this.parseTrades (response, market, since, limit);
     }
 
