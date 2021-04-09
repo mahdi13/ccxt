@@ -3,7 +3,7 @@
 //  ---------------------------------------------------------------------------
 
 const Exchange = require ('./base/Exchange');
-const { ExchangeError, ArgumentsRequired, ExchangeNotAvailable, InsufficientFunds, OrderNotFound, InvalidOrder, DDoSProtection, InvalidNonce, AuthenticationError, RateLimitExceeded, PermissionDenied, NotSupported, BadRequest, BadSymbol, AccountSuspended, OrderImmediatelyFillable } = require ('./base/errors');
+const { ArgumentsRequired } = require ('./base/errors');
 const { PAD_WITH_ZERO } = require ('./base/functions/number');
 
 //  ---------------------------------------------------------------------------
@@ -117,7 +117,7 @@ module.exports = class farhadmarket extends Exchange {
     }
 
     async fetchCurrencies (params = {}) {
-        const response = await this.publicGetCurrencies(params);
+        const response = await this.publicGetCurrencies (params);
         const result = {};
         for (let i = 0; i < response.length; i++) {
             const entry = response[i];
@@ -141,11 +141,11 @@ module.exports = class farhadmarket extends Exchange {
                 isDepositEnabled = isDepositEnabled || depositEnable;
                 isWithdrawEnabled = isWithdrawEnabled || withdrawEnable;
                 fees[network] = withdrawFee;
-                const order = this.safeInteger (networkItem, 'order')
+                const order = this.safeInteger (networkItem, 'order');
                 if (order < primaryNetworkOrder) {
-                    primaryNetworkOrder = order
+                    primaryNetworkOrder = order;
                 }
-                const isDefault = primaryNetworkOrder === order
+                const isDefault = primaryNetworkOrder === order;
                 if (isDefault || fee === undefined) {
                     fee = withdrawFee;
                 }
@@ -167,7 +167,7 @@ module.exports = class farhadmarket extends Exchange {
     }
 
     async fetchMarkets (params = {}) {
-        const currencies = await this.fetchCurrencies();
+        const currencies = await this.fetchCurrencies ();
         const currenciesById = this.indexBy (currencies, 'id');
         const response = await this.publicGetMarkets (params);
         const result = [];
@@ -182,8 +182,8 @@ module.exports = class farhadmarket extends Exchange {
             const active = true;
             const maxAmount = this.safeNumber (market, 'maxAmount');
             const minAmount = this.safeNumber (market, 'minAmount');
-            const fee = this.parseTradingFee (market)
-            result.push({
+            const fee = this.parseTradingFee (market);
+            result.push ({
                 'id': id,
                 'symbol': symbol,
                 'base': baseCurrency,
@@ -358,7 +358,7 @@ module.exports = class farhadmarket extends Exchange {
     async fetchOHLCV (symbol, timeframe = '1m', since = undefined, limit = undefined, params = {}) {
         await this.loadMarkets ();
         const market = this.market (symbol);
-        const duration = this.parseTimeframe (timeframe)
+        const duration = this.parseTimeframe (timeframe);
         const request = {
             'symbol': market['id'],
             'interval': duration,
@@ -424,9 +424,9 @@ module.exports = class farhadmarket extends Exchange {
         const amount = this.safeNumber (order, 'amount');
         let status = 'open';
         if (filled === amount) {
-            status = 'closed'
-        } else if (finished){
-            status = 'canceled'
+            status = 'closed';
+        } else if (finished) {
+            status = 'canceled';
         }
         const marketId = this.safeString (order, 'market');
         const symbol = this.safeSymbol (marketId, market);
@@ -464,7 +464,6 @@ module.exports = class farhadmarket extends Exchange {
             'side': side,
             'amount': this.amountToPrecision (symbol, amount),
         };
-
         if (type === 'limit') {
             request['price'] = this.priceToPrecision (symbol, price);
         } else if (type === 'market') {
@@ -477,13 +476,13 @@ module.exports = class farhadmarket extends Exchange {
     }
 
     async fetchClosedOrder (id, symbol = undefined, params = {}) {
-        const request = { 'status': 'finished'}
-        return await this.fetchOrder (id, symbol, this.extend (request, params))
+        const request = { 'status': 'finished' };
+        return await this.fetchOrder (id, symbol, this.extend (request, params));
     }
 
     async fetchOpenOrder (id, symbol = undefined, params = {}) {
-        const request = { 'status': 'pending'}
-        return await this.fetchOrder (id, symbol, this.extend (request, params))
+        const request = { 'status': 'pending' };
+        return await this.fetchOrder (id, symbol, this.extend (request, params));
     }
 
     async fetchOrder (id, symbol = undefined, params = {}) {
@@ -524,13 +523,13 @@ module.exports = class farhadmarket extends Exchange {
     }
 
     async fetchOpenOrders (symbol = undefined, since = undefined, limit = undefined, params = {}) {
-        const request = { 'status': 'pending'}
-        return await this.fetchOrders(symbol, since, limit, this.extend (request, params))
+        const request = { 'status': 'pending' };
+        return await this.fetchOrders (symbol, since, limit, this.extend (request, params));
     }
 
     async fetchClosedOrders (symbol = undefined, since = undefined, limit = undefined, params = {}) {
-        const request = { 'status': 'finished'}
-        return await this.fetchOrders(symbol, since, limit, this.extend (request, params))
+        const request = { 'status': 'finished' };
+        return await this.fetchOrders (symbol, since, limit, this.extend (request, params));
     }
 
     async cancelOrder (id, symbol = undefined, params = {}) {
@@ -568,65 +567,6 @@ module.exports = class farhadmarket extends Exchange {
         return this.parseTrades (response, market, since, limit);
     }
 
-    parseTradingFee (fee, market = undefined) {
-        const marketId = this.safeString (market, 'symbol');
-        const symbol = this.safeSymbol (marketId);
-        return {
-            'symbol': symbol,
-            'maker': this.safeNumber (fee, 'makerCommissionRate'),
-            'taker': this.safeNumber (fee, 'takerCommissionRate'),
-        };
-    }
-
-    async fetchTradingFee (symbol, params = {}) {
-        await this.loadMarkets ();
-        const market = this.market (symbol);
-        const request = {
-            'symbol': market['id'],
-        };
-        const response = await this.wapiGetTradeFee (this.extend (request, params));
-        //
-        //     {
-        //         "tradeFee": [
-        //             {
-        //                 "symbol": "ADABNB",
-        //                 "maker": 0.9000,
-        //                 "taker": 1.0000
-        //             }
-        //         ],
-        //         "success": true
-        //     }
-        //
-        const tradeFee = this.safeValue (response, 'tradeFee', []);
-        const first = this.safeValue (tradeFee, 0, {});
-        return this.parseTradingFee (first);
-    }
-
-    async fetchTradingFees (params = {}) {
-        await this.loadMarkets ();
-        const response = await this.wapiGetTradeFee (params);
-        //
-        //     {
-        //         "tradeFee": [
-        //             {
-        //                 "symbol": "ADABNB",
-        //                 "maker": 0.9000,
-        //                 "taker": 1.0000
-        //             }
-        //         ],
-        //         "success": true
-        //     }
-        //
-        const tradeFee = this.safeValue (response, 'tradeFee', []);
-        const result = {};
-        for (let i = 0; i < tradeFee.length; i++) {
-            const fee = this.parseTradingFee (tradeFee[i]);
-            const symbol = fee['symbol'];
-            result[symbol] = fee;
-        }
-        return result;
-    }
-
     sign (path, api = 'public', method = 'GET', params = {}, headers = undefined, body = undefined) {
         let url = this.urls['api'] + '/' + this.implodeParams (path, params);
         const query = this.omit (params, this.extractParams (path));
@@ -646,71 +586,5 @@ module.exports = class farhadmarket extends Exchange {
             }
         }
         return { 'url': url, 'method': method, 'body': body, 'headers': headers };
-    }
-
-    handleErrors (code, reason, url, method, headers, body, response, requestHeaders, requestBody) {
-        if ((code === 418) || (code === 429)) {
-            throw new DDoSProtection (this.id + ' ' + code.toString () + ' ' + reason + ' ' + body);
-        }
-        // error response in a form: { "code": -1013, "msg": "Invalid quantity." }
-        // following block cointains legacy checks against message patterns in "msg" property
-        // will switch "code" checks eventually, when we know all of them
-        if (code >= 400) {
-            if (body.indexOf ('Price * QTY is zero or less') >= 0) {
-                throw new InvalidOrder (this.id + ' order cost = amount * price is zero or less ' + body);
-            }
-            if (body.indexOf ('LOT_SIZE') >= 0) {
-                throw new InvalidOrder (this.id + ' order amount should be evenly divisible by lot size ' + body);
-            }
-            if (body.indexOf ('PRICE_FILTER') >= 0) {
-                throw new InvalidOrder (this.id + ' order price is invalid, i.e. exceeds allowed price precision, exceeds min price or max price limits or is invalid float value in general, use this.priceToPrecision (symbol, amount) ' + body);
-            }
-        }
-        if (response === undefined) {
-            return; // fallback to default error handler
-        }
-        // check success value for wapi endpoints
-        // response in format {'msg': 'The coin does not exist.', 'success': true/false}
-        const success = this.safeValue (response, 'success', true);
-        if (!success) {
-            const message = this.safeString (response, 'msg');
-            let parsedMessage = undefined;
-            if (message !== undefined) {
-                try {
-                    parsedMessage = JSON.parse (message);
-                } catch (e) {
-                    // do nothing
-                    parsedMessage = undefined;
-                }
-                if (parsedMessage !== undefined) {
-                    response = parsedMessage;
-                }
-            }
-        }
-        const message = this.safeString (response, 'msg');
-        if (message !== undefined) {
-            this.throwExactlyMatchedException (this.exceptions, message, this.id + ' ' + message);
-        }
-        // checks against error codes
-        const error = this.safeString (response, 'code');
-        if (error !== undefined) {
-            // https://github.com/ccxt/ccxt/issues/6501
-            // https://github.com/ccxt/ccxt/issues/7742
-            if ((error === '200') || (error === '0')) {
-                return;
-            }
-            // a workaround for {"code":-2015,"msg":"Invalid API-key, IP, or permissions for action."}
-            // despite that their message is very confusing, it is raised by Binance
-            // on a temporary ban, the API key is valid, but disabled for a while
-            if ((error === '-2015') && this.options['hasAlreadyAuthenticatedSuccessfully']) {
-                throw new DDoSProtection (this.id + ' temporary banned: ' + body);
-            }
-            const feedback = this.id + ' ' + body;
-            this.throwExactlyMatchedException (this.exceptions, error, feedback);
-            throw new ExchangeError (feedback);
-        }
-        if (!success) {
-            throw new ExchangeError (this.id + ' ' + body);
-        }
     }
 };
