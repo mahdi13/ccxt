@@ -21,7 +21,7 @@ module.exports = class farhadmarket extends Exchange {
                 'createOrder': true,
                 'fetchCurrencies': true,
                 'fetchBalance': true,
-                'fetchClosedOrders': 'emulated',
+                'fetchClosedOrders': true,
                 'fetchDepositAddress': false, // TODO
                 'fetchDeposits': false, // TODO
                 'fetchFundingFees': false, // TODO
@@ -77,6 +77,10 @@ module.exports = class farhadmarket extends Exchange {
                     'peek': [ 'markets/{symbol}/marketdeals' ],
                 },
                 'private': {
+                    'get': [
+                        'orders',
+                        'orders/{id}',
+                    ],
                     'overview': [ 'balances' ],
                     'cancel': [ 'orders/{id}' ],
                     'create': [ 'orders' ],
@@ -415,8 +419,7 @@ module.exports = class farhadmarket extends Exchange {
 
     parseOrder (order, market = undefined) {
         const timestamp = this.parse8601 (this.safeString (order, 'createdAt'));
-
-        const finished = (this.safeValue (order, 'finishedAt') === undefined);
+        const finished = (this.safeValue (order, 'finishedAt') !== undefined);
         const filled = this.safeNumber (order, 'filledStock');
         const amount = this.safeNumber (order, 'amount');
         let status = 'open';
@@ -473,147 +476,61 @@ module.exports = class farhadmarket extends Exchange {
         return this.parseOrder (response, market);
     }
 
+    async fetchClosedOrder (id, symbol = undefined, params = {}) {
+        const request = { 'status': 'finished'}
+        return await this.fetchOrder (id, symbol, this.extend (request, params))
+    }
+
+    async fetchOpenOrder (id, symbol = undefined, params = {}) {
+        const request = { 'status': 'pending'}
+        return await this.fetchOrder (id, symbol, this.extend (request, params))
+    }
+
     async fetchOrder (id, symbol = undefined, params = {}) {
         if (symbol === undefined) {
             throw new ArgumentsRequired (this.id + ' fetchOrder() requires a symbol argument');
         }
+        this.checkRequiredCredentials ();
         await this.loadMarkets ();
         const market = this.market (symbol);
-        const defaultType = this.safeString2 (this.options, 'fetchOrder', 'defaultType', market['type']);
-        const type = this.safeString (params, 'type', defaultType);
-        let method = 'privateGetOrder';
-        if (type === 'future') {
-            method = 'fapiPrivateGetOrder';
-        } else if (type === 'delivery') {
-            method = 'dapiPrivateGetOrder';
-        } else if (type === 'margin') {
-            method = 'sapiGetMarginOrder';
-        }
+        const status = this.safeString (params, 'status', 'pending'); // TODO
         const request = {
-            'symbol': market['id'],
+            'id': id,
+            'status': status,
+            'marketName': market['id'],
         };
-        const clientOrderId = this.safeValue2 (params, 'origClientOrderId', 'clientOrderId');
-        if (clientOrderId !== undefined) {
-            request['origClientOrderId'] = clientOrderId;
-        } else {
-            request['orderId'] = id;
-        }
-        const query = this.omit (params, [ 'type', 'clientOrderId', 'origClientOrderId' ]);
-        const response = await this[method] (this.extend (request, query));
+        const response = await this.privateGetOrdersId (request);
         return this.parseOrder (response, market);
     }
 
     async fetchOrders (symbol = undefined, since = undefined, limit = undefined, params = {}) {
         if (symbol === undefined) {
-            throw new ArgumentsRequired (this.id + ' fetchOrders() requires a symbol argument');
+            throw new ArgumentsRequired (this.id + ' fetchOrder() requires a symbol argument');
         }
         await this.loadMarkets ();
         const market = this.market (symbol);
-        const defaultType = this.safeString2 (this.options, 'fetchOrders', 'defaultType', market['type']);
-        const type = this.safeString (params, 'type', defaultType);
-        let method = 'privateGetAllOrders';
-        if (type === 'future') {
-            method = 'fapiPrivateGetAllOrders';
-        } else if (type === 'delivery') {
-            method = 'dapiPrivateGetAllOrders';
-        } else if (type === 'margin') {
-            method = 'sapiGetMarginAllOrders';
-        }
+        const status = this.safeString (params, 'status', 'pending'); // TODO
         const request = {
-            'symbol': market['id'],
+            'marketName': market['id'],
+            'status': status,
+            'limit': 20,
         };
-        if (since !== undefined) {
-            request['startTime'] = since;
-        }
+        // TODO: Use `since` parameter
         if (limit !== undefined) {
             request['limit'] = limit;
         }
-        const query = this.omit (params, 'type');
-        const response = await this[method] (this.extend (request, query));
-        //
-        //  spot
-        //
-        //     [
-        //         {
-        //             "symbol": "LTCBTC",
-        //             "orderId": 1,
-        //             "clientOrderId": "myOrder1",
-        //             "price": "0.1",
-        //             "origQty": "1.0",
-        //             "executedQty": "0.0",
-        //             "cummulativeQuoteQty": "0.0",
-        //             "status": "NEW",
-        //             "timeInForce": "GTC",
-        //             "type": "LIMIT",
-        //             "side": "BUY",
-        //             "stopPrice": "0.0",
-        //             "icebergQty": "0.0",
-        //             "time": 1499827319559,
-        //             "updateTime": 1499827319559,
-        //             "isWorking": true
-        //         }
-        //     ]
-        //
-        //  futures
-        //
-        //     [
-        //         {
-        //             "symbol": "BTCUSDT",
-        //             "orderId": 1,
-        //             "clientOrderId": "myOrder1",
-        //             "price": "0.1",
-        //             "origQty": "1.0",
-        //             "executedQty": "1.0",
-        //             "cumQuote": "10.0",
-        //             "status": "NEW",
-        //             "timeInForce": "GTC",
-        //             "type": "LIMIT",
-        //             "side": "BUY",
-        //             "stopPrice": "0.0",
-        //             "updateTime": 1499827319559
-        //         }
-        //     ]
-        //
+        const response = await this.privateGetOrders (request);
         return this.parseOrders (response, market, since, limit);
     }
 
     async fetchOpenOrders (symbol = undefined, since = undefined, limit = undefined, params = {}) {
-        await this.loadMarkets ();
-        let market = undefined;
-        let query = undefined;
-        let type = undefined;
-        const request = {};
-        if (symbol !== undefined) {
-            market = this.market (symbol);
-            request['symbol'] = market['id'];
-            const defaultType = this.safeString2 (this.options, 'fetchOpenOrders', 'defaultType', market['type']);
-            type = this.safeString (params, 'type', defaultType);
-            query = this.omit (params, 'type');
-        } else if (this.options['warnOnFetchOpenOrdersWithoutSymbol']) {
-            const symbols = this.symbols;
-            const numSymbols = symbols.length;
-            const fetchOpenOrdersRateLimit = parseInt (numSymbols / 2);
-            throw new ExchangeError (this.id + ' fetchOpenOrders WARNING: fetching open orders without specifying a symbol is rate-limited to one call per ' + fetchOpenOrdersRateLimit.toString () + ' seconds. Do not call this method frequently to avoid ban. Set ' + this.id + '.options["warnOnFetchOpenOrdersWithoutSymbol"] = false to suppress this warning message.');
-        } else {
-            const defaultType = this.safeString2 (this.options, 'fetchOpenOrders', 'defaultType', 'spot');
-            type = this.safeString (params, 'type', defaultType);
-            query = this.omit (params, 'type');
-        }
-        let method = 'privateGetOpenOrders';
-        if (type === 'future') {
-            method = 'fapiPrivateGetOpenOrders';
-        } else if (type === 'delivery') {
-            method = 'dapiPrivateGetOpenOrders';
-        } else if (type === 'margin') {
-            method = 'sapiGetMarginOpenOrders';
-        }
-        const response = await this[method] (this.extend (request, query));
-        return this.parseOrders (response, market, since, limit);
+        const request = { 'status': 'pending'}
+        return await this.fetchOrders(symbol, since, limit, this.extend (request, params))
     }
 
     async fetchClosedOrders (symbol = undefined, since = undefined, limit = undefined, params = {}) {
-        const orders = await this.fetchOrders (symbol, since, limit, params);
-        return this.filterBy (orders, 'status', 'closed');
+        const request = { 'status': 'finished'}
+        return await this.fetchOrders(symbol, since, limit, this.extend (request, params))
     }
 
     async cancelOrder (id, symbol = undefined, params = {}) {
@@ -649,26 +566,6 @@ module.exports = class farhadmarket extends Exchange {
         }
         const response = await this.privatePeekMarketsSymbolMydeals (this.extend (request, params));
         return this.parseTrades (response, market, since, limit);
-    }
-
-    parseTransactionStatusByType (status, type = undefined) {
-        const statusesByType = {
-            'deposit': {
-                '0': 'pending',
-                '1': 'ok',
-            },
-            'withdrawal': {
-                '0': 'pending', // Email Sent
-                '1': 'canceled', // Cancelled (different from 1 = ok in deposits)
-                '2': 'pending', // Awaiting Approval
-                '3': 'failed', // Rejected
-                '4': 'pending', // Processing
-                '5': 'failed', // Failure
-                '6': 'ok', // Completed
-            },
-        };
-        const statuses = this.safeValue (statusesByType, type, {});
-        return this.safeString (statuses, status, status);
     }
 
     parseTradingFee (fee, market = undefined) {
