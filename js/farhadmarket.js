@@ -33,7 +33,7 @@ module.exports = class farhadmarket extends Exchange {
                 'fetchOrders': true,
                 'fetchOrderBook': true,
                 'fetchTicker': true,
-                'fetchTickers': true,
+                'fetchTickers': false, // TODO
                 'fetchTime': false, // TODO
                 'fetchTrades': true,
                 'fetchTradingFee': false, // TODO
@@ -73,6 +73,7 @@ module.exports = class farhadmarket extends Exchange {
                         'markets',
                     ],
                     'depth': [ 'markets/{symbol}' ],
+                    'status': [ 'markets/{symbol}' ],
                     'kline': [ 'markets/{symbol}' ],
                     'peek': [ 'markets/{symbol}/marketdeals' ],
                 },
@@ -166,6 +167,16 @@ module.exports = class farhadmarket extends Exchange {
         return result;
     }
 
+    parseTradingFee (fee, market = undefined) {
+        const marketId = this.safeString (market, 'symbol');
+        const symbol = this.safeSymbol (marketId);
+        return {
+            'symbol': symbol,
+            'maker': this.safeNumber (fee, 'makerCommissionRate'),
+            'taker': this.safeNumber (fee, 'takerCommissionRate'),
+        };
+    }
+
     async fetchMarkets (params = {}) {
         const currencies = await this.fetchCurrencies ();
         const currenciesById = this.indexBy (currencies, 'id');
@@ -253,55 +264,45 @@ module.exports = class farhadmarket extends Exchange {
     }
 
     parseTicker (ticker, market = undefined) {
-        //
-        //     {
-        //         symbol: 'ETHBTC',
-        //         priceChange: '0.00068700',
-        //         priceChangePercent: '2.075',
-        //         weightedAvgPrice: '0.03342681',
-        //         prevClosePrice: '0.03310300',
-        //         lastPrice: '0.03378900',
-        //         lastQty: '0.07700000',
-        //         bidPrice: '0.03378900',
-        //         bidQty: '7.16800000',
-        //         askPrice: '0.03379000',
-        //         askQty: '24.00000000',
-        //         openPrice: '0.03310200',
-        //         highPrice: '0.03388900',
-        //         lowPrice: '0.03306900',
-        //         volume: '205478.41000000',
-        //         quoteVolume: '6868.48826294',
-        //         openTime: 1601469986932,
-        //         closeTime: 1601556386932,
-        //         firstId: 196098772,
-        //         lastId: 196186315,
-        //         count: 87544
-        //     }
-        //
-        const timestamp = this.safeInteger (ticker, 'closeTime');
-        const marketId = this.safeString (ticker, 'symbol');
+        const timestamp = this.seconds ();
+        const marketId = market['id'];
         const symbol = this.safeSymbol (marketId, market);
-        const last = this.safeNumber (ticker, 'lastPrice');
+        const last = this.safeNumber (ticker, 'last');
+        const open = this.safeNumber (ticker, 'open');
+        const close = this.safeNumber (ticker, 'close');
+        let change = undefined;
+        let percentage = undefined;
+        let average = undefined;
+        const baseVolume = this.safeNumber (ticker, 'volume');
+        const quoteVolume = this.safeNumber (ticker, 'deal');
+        if ((close !== undefined) && (open !== undefined)) {
+            change = close - open;
+            if (open > 0) {
+                percentage = change / open * 100;
+            }
+            average = this.sum (open, close) / 2;
+        }
+        const vwap = this.vwap (baseVolume, quoteVolume);
         return {
             'symbol': symbol,
             'timestamp': timestamp,
             'datetime': this.iso8601 (timestamp),
-            'high': this.safeNumber (ticker, 'highPrice'),
-            'low': this.safeNumber (ticker, 'lowPrice'),
-            'bid': this.safeNumber (ticker, 'bidPrice'),
-            'bidVolume': this.safeNumber (ticker, 'bidQty'),
-            'ask': this.safeNumber (ticker, 'askPrice'),
-            'askVolume': this.safeNumber (ticker, 'askQty'),
-            'vwap': this.safeNumber (ticker, 'weightedAvgPrice'),
-            'open': this.safeNumber (ticker, 'openPrice'),
-            'close': last,
+            'high': this.safeNumber (ticker, 'high'),
+            'low': this.safeNumber (ticker, 'low'),
+            'bid': undefined, // TODO
+            'bidVolume': undefined,  // TODO
+            'ask': undefined,  // TODO
+            'askVolume': undefined,  // TODO
+            'vwap': vwap,
+            'open': open,
+            'close': close,
             'last': last,
-            'previousClose': this.safeNumber (ticker, 'prevClosePrice'), // previous day close
-            'change': this.safeNumber (ticker, 'priceChange'),
-            'percentage': this.safeNumber (ticker, 'priceChangePercent'),
-            'average': undefined,
-            'baseVolume': this.safeNumber (ticker, 'volume'),
-            'quoteVolume': this.safeNumber (ticker, 'quoteVolume'),
+            'previousClose': undefined,
+            'change': change,
+            'percentage': percentage,
+            'average': average,
+            'baseVolume': baseVolume,
+            'quoteVolume': quoteVolume,
             'info': ticker,
         };
     }
@@ -311,37 +312,10 @@ module.exports = class farhadmarket extends Exchange {
         const market = this.market (symbol);
         const request = {
             'symbol': market['id'],
+            'period': 86400,
         };
-        let method = 'publicGetTicker24hr';
-        if (market['future']) {
-            method = 'fapiPublicGetTicker24hr';
-        } else if (market['delivery']) {
-            method = 'dapiPublicGetTicker24hr';
-        }
-        const response = await this[method] (this.extend (request, params));
-        if (Array.isArray (response)) {
-            const firstTicker = this.safeValue (response, 0, {});
-            return this.parseTicker (firstTicker, market);
-        }
+        const response = await this.publicStatusMarketsSymbol (this.extend (request, params));
         return this.parseTicker (response, market);
-    }
-
-    async fetchTickers (symbols = undefined, params = {}) {
-        await this.loadMarkets ();
-        const defaultType = this.safeString2 (this.options, 'fetchTickers', 'defaultType', 'spot');
-        const type = this.safeString (params, 'type', defaultType);
-        const query = this.omit (params, 'type');
-        let defaultMethod = undefined;
-        if (type === 'future') {
-            defaultMethod = 'fapiPublicGetTicker24hr';
-        } else if (type === 'delivery') {
-            defaultMethod = 'dapiPublicGetTicker24hr';
-        } else {
-            defaultMethod = 'publicGetTicker24hr';
-        }
-        const method = this.safeString (this.options, 'fetchTickersMethod', defaultMethod);
-        const response = await this[method] (query);
-        return this.parseTickers (response, symbols);
     }
 
     parseOHLCV (ohlcv, market = undefined) {
